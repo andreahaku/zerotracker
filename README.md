@@ -3,6 +3,13 @@
 A music tracker for the [M5Stack CardputerZero](https://github.com/CardputerZero). It reads and
 writes M8 song and instrument files, so a song can move between ZeroTracker and an M8.
 
+[![ZeroTracker 0.1.0 on the CardputerZero (video, 2:32)](docs/media/zerotracker-0.1.0.jpg)](docs/media/zerotracker-0.1.0.mp4)
+
+*ZeroTracker 0.1.0 on the CardputerZero: click the picture for the video (2:32). The song is
+"SLSKERS DEMO" by [mikey303](https://www.youtube.com/c/mikey303), from jegasus'
+[M8 Tracker Workshop](https://github.com/jegasus/m8-tracker-workshop), CC BY-NC-SA 4.0; the
+video is shared under the same licence.*
+
 | | | |
 |---|---|---|
 | ![HOME](docs/screenshots/01-home.png) | ![TIME](docs/screenshots/02-time.png) | ![CHAIN and PHRASE](docs/screenshots/03-chain-phrase.png) |
