@@ -3,7 +3,18 @@
 A music tracker for the [M5Stack CardputerZero](https://github.com/CardputerZero). It reads and
 writes M8 song and instrument files, so a song can move between ZeroTracker and an M8.
 
-![TIME page](docs/design/1-timeline.png)
+| | | |
+|---|---|---|
+| ![HOME](docs/screenshots/01-home.png) | ![TIME](docs/screenshots/02-time.png) | ![CHAIN and PHRASE](docs/screenshots/03-chain-phrase.png) |
+| HOME | TIME: the song as eight lanes | CHAIN and PHRASE side by side |
+| ![FM instrument](docs/screenshots/04-instrument-fm.png) | ![Modulators](docs/screenshots/05-instrument-mods.png) | ![MIX](docs/screenshots/06-mix.png) |
+| an FM instrument | filter, mixer and modulators | MIX with meters |
+| ![Oscilloscope lanes](docs/screenshots/07-osc-lanes.png) | ![Oscilloscope columns](docs/screenshots/08-osc-columns.png) | ![Oscilloscope grid](docs/screenshots/09-osc-grid.png) |
+| oscilloscopes: lanes | columns | grid |
+| ![INST](docs/screenshots/10-inst.png) | ![SONG](docs/screenshots/11-song.png) | ![APP](docs/screenshots/12-app.png) |
+| INST: what each track plays | SONG | APP settings |
+| ![MANUAL](docs/screenshots/13-manual.png) | ![LIBRARY](docs/screenshots/14-library.png) | ![LOAD](docs/screenshots/15-browser-songs.png) |
+| MANUAL: a QR code to this guide | LIBRARY | LOAD |
 
 - Eight tracks, songs, chains, phrases, instruments and tables, as on the M8.
 - Synth engines: FMSYNTH, WAVSYNTH, MACROSYNTH (Braids models), HYPERSYNTH, and the SAMPLER with
@@ -99,6 +110,11 @@ scripts/cp0-docker-build.sh --package    # device build and .deb in dist/
 | `src/` | the C++/LVGL app, from the CardputerZero Template |
 | `docs/manual/` | getting started and resources |
 
+## Contributing
+
+Bug reports, songs that sound wrong, translations and code are welcome: see
+[CONTRIBUTING.md](CONTRIBUTING.md), including the clean-room rules every contribution follows.
+
 ## Licence
 
 ZeroTracker is free software under the GNU General Public License v3.0 or later
@@ -108,6 +124,6 @@ own licences, listed in `CONTENT.md` on the device.
 
 ## Support
 
-ZeroTracker is free and open source. If it is useful to you, you can support its development with a one-off donation on [Ko-fi](https://ko-fi.com/andreahaku) or by sponsoring me on [GitHub Sponsors](https://github.com/sponsors/andreahaku). Donations are voluntary and do not unlock any feature.
+ZeroTracker is free and open source. If it is useful to you, you can support its development with a one-off donation on [Ko-fi](https://ko-fi.com/andreahaku) or by sponsoring me on [GitHub Sponsors](https://github.com/sponsors/andreahaku). Donations are voluntary and do not unlock any feature. More in [FUNDING.md](FUNDING.md).
 
 ZeroTracker is not affiliated with Dirtywave.
