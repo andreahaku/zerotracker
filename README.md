@@ -30,7 +30,7 @@ file compatibility.
 ## How it was built
 
 No Dirtywave code was used. No M8 firmware was disassembled or decompiled.
-ZeroTracker contains no Dirtywave code, data, samples, wavetables, fonts or graphics.
+It contains no Dirtywave data, samples, wavetables, fonts or graphics.
 
 Everything in ZeroTracker comes from analysis and comparison:
 
