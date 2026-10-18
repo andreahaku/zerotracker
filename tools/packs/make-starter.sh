@@ -10,7 +10,10 @@ rm -rf "$OUT"
 mkdir -p "$OUT/Songs/Workshop" "$OUT/Samples/Starter"
 
 cp -a "$SRC/Songs/Workshop/mikey303 - SLSKERS DEMO" "$OUT/Songs/Workshop/"
-cp -a "$SRC/Instruments" "$OUT/"
+# Only presets whose licence is documented; the others wait for their
+# authors' permission.
+mkdir -p "$OUT/Instruments"
+cp -a "$SRC/Instruments/mikey303 Ravepack" "$OUT/Instruments/"
 
 # A small kit of samples with a clear licence: FLOOR BABA's own synth
 # recordings (CC0) and two sliced kits of the Jam 41 Space pack (CC0, freesound).

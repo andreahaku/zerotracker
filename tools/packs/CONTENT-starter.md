@@ -16,10 +16,7 @@ More packs: LIBRARY (key 5 on HOME, key 8 on APP).
 
 | Folder | Author | Source | Licence |
 |---|---|---|---|
-| `Instruments/AvrilC` | AvrilC | AvrilC preset packs, shared in the M8 community | as published by the author |
-| `Instruments/Community` | various M8 users | community preset collection | as published by the authors |
-| `Instruments/mikey303 Ravepack` | mikey303 | M8 Tracker Workshop | CC BY-NC-SA 4.0 |
-| `Instruments/M8CJ Jam 41 Space` | M8 Community Jam 41 artists, see its `README.md` | https://github.com/handeyeco/space-jam-presets | CC BY-NC-SA 4.0 |
+| `Instruments/mikey303 Ravepack` | mikey303, https://www.youtube.com/c/mikey303 | jegasus' M8 Tracker Workshop | CC BY-NC-SA 4.0 |
 
 Some Ravepack presets name samples that are not included; they play silent until you set a
 sample.

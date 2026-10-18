@@ -13,7 +13,7 @@ ZeroTracker is an independent project, not affiliated with Dirtywave.
    `sudo apt install ./ZeroTracker_*.deb`.
 2. Open it from the launcher.
 3. At the first start ZeroTracker creates `~/ZeroTracker` and copies the starter content into it:
-   a song, 503 instruments and a small CC0 sample kit. Files already there stay as they are.
+   a song, 71 instruments and a small CC0 sample kit. Files already there stay as they are.
 
 The folder holds everything:
 
