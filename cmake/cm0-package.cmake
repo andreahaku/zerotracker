@@ -38,10 +38,6 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/config/zerotracker.conf"
     DESTINATION "/etc"
 )
 
-install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/"
-    DESTINATION "${CMAKE_INSTALL_DATADIR}/${APP_NAME}/audio"
-    PATTERN ".DS_Store" EXCLUDE
-)
 # The starter songs, instruments and samples (content/starter, built by
 # tools/packs/make-starter.sh, not in git), copied into the songs folder on
 # the first start.
