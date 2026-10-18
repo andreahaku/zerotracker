@@ -1,0 +1,86 @@
+/*
+ * SPDX-FileCopyrightText: 2026 One Small Step Apps Ltd
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Ported from ZeroRadio's toolkit (17/10/2026).
+ */
+
+#include "i18n.h"
+
+#include <cstdlib>
+#include <cstring>
+#include <initializer_list>
+
+namespace zt::i18n {
+
+Lang parse_locale(const char* name) {
+    if (!name || std::strlen(name) < 2) return Lang::En;
+    const auto is = [name](const char* code) {
+        return std::strncmp(name, code, 2) == 0 && (name[2] == '\0' || name[2] == '_' ||
+                                                    name[2] == '-' || name[2] == '.');
+    };
+    if (is("it")) return Lang::It;
+    if (is("fr")) return Lang::Fr;
+    if (is("de")) return Lang::De;
+    if (is("es")) return Lang::Es;
+    if (is("ja")) return Lang::Ja;
+    if (is("zh")) return Lang::Zh;
+    return Lang::En;
+}
+
+Lang current() {
+    static const Lang lang = [] {
+        // The first variable that is set wins, as in the C library: LC_ALL
+        // overrides LANG even when it names a language without translations.
+        for (const char* var : {"ZEROTRACKER_LANG", "LC_ALL", "LC_MESSAGES", "LANG"}) {
+            const char* value = std::getenv(var);
+            if (value && value[0] != '\0') return parse_locale(value);
+        }
+        return Lang::En;
+    }();
+    return lang;
+}
+
+const char* pick(const Text& text, Lang lang) {
+    const char* value = nullptr;
+    switch (lang) {
+        case Lang::It: value = text.it; break;
+        case Lang::Fr: value = text.fr; break;
+        case Lang::De: value = text.de; break;
+        case Lang::Es: value = text.es; break;
+        case Lang::Ja: value = text.ja; break;
+        case Lang::Zh: value = text.zh; break;
+        case Lang::En: break;
+    }
+    if (value && value[0] != '\0') return value;
+    return text.en ? text.en : "";
+}
+
+bool needs_cjk_font(Lang lang) {
+    return lang == Lang::Ja || lang == Lang::Zh;
+}
+
+const char* pick(const Text& text) {
+    return pick(text, current());
+}
+
+const char* code(Lang lang) {
+    static const char* const codes[kCount] = {"EN", "IT", "FR", "DE", "ES", "JA", "ZH"};
+    return codes[static_cast<int>(lang)];
+}
+
+Lang from_code(const char* value) {
+    for (int i = 0; i < kCount; ++i) {
+        if (value && std::strcmp(value, code(static_cast<Lang>(i))) == 0) return static_cast<Lang>(i);
+    }
+    return Lang::En;
+}
+
+const char* native_name(Lang lang) {
+    static const char* const names[kCount] = {"ENGLISH", "ITALIANO", "FRAN\u00C7AIS", "DEUTSCH",
+                                              "ESPA\u00D1OL", "\u65E5\u672C\u8A9E", "\u4E2D\u6587"};
+    return names[static_cast<int>(lang)];
+}
+
+} // namespace zt::i18n

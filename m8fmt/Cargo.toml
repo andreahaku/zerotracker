@@ -1,0 +1,17 @@
+[package]
+name = "m8fmt"
+version.workspace = true
+# Kept at the upstream edition to keep the diff with m8-file-parser readable.
+edition = "2021"
+publish.workspace = true
+license = "MIT"
+description = "Lossless reader and writer for Dirtywave M8 files. Fork of m8-file-parser 0.7.0 (MIT, Twinside), see LICENSE-m8-file-parser"
+
+[dependencies]
+arr_macro = "0.2.1"
+array-concat = "0.5.3"
+byteorder = "1.4.3"
+num_enum = "0.7.3"
+
+[features]
+const_panic = []

@@ -1,0 +1,9 @@
+[package]
+name = "m8view"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+m8fmt = { path = "../m8fmt" }

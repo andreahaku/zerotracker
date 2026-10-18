@@ -1,0 +1,1577 @@
+use std::cmp::min;
+use std::fmt;
+use std::fmt::Display;
+
+use crate::eq::Equ;
+use crate::fx::*;
+use crate::instruments::*;
+use crate::reader::*;
+use crate::remapper::EqMapping;
+use crate::remapper::InstrumentMapping;
+use crate::remapper::PhraseMapping;
+use crate::remapper::TableMapping;
+use crate::remapper::EQ_TRACKING_COMMAND_NAMES;
+use crate::remapper::INSTRUMENT_TRACKING_COMMAND_NAMES;
+use crate::remapper::TABLE_TRACKING_COMMAND_NAMES;
+use crate::scale::*;
+use crate::settings::*;
+use crate::version::*;
+use crate::writer::Writer;
+
+use arr_macro::arr;
+use byteorder::{ByteOrder, LittleEndian};
+
+pub struct Offsets {
+    pub groove: usize,
+    pub song: usize,
+    pub phrases: usize,
+    pub chains: usize,
+    pub table: usize,
+    pub instruments: usize,
+    pub effect_settings: usize,
+    pub midi_mapping: usize,
+    pub scale: usize,
+
+    /// Adress of the bitmask for song bookmarks.
+    pub bookmarks: usize,
+    pub eq: usize,
+
+    /// Number of eq for the song (different between 4.0 & 4.1)
+    pub instrument_eq_count: usize,
+
+    /// For instrument size, where is the EQ information written
+    /// (if any)
+    pub instrument_file_eq_offset: Option<usize>,
+
+    /// Where the PPQN for groove are stored, after firmware
+    /// 6.5
+    pub groove_ppqn_offsets: Option<usize>,
+
+    /// Starting with firmware 6.6, there is an option to
+    /// bookmark/color rows
+    pub row_bookmark_offset: Option<usize>,
+}
+
+impl Offsets {
+    pub fn eq_count(&self) -> usize {
+        // general EQ + 3 for effects + 1 global
+        self.instrument_eq_count + 3 + 1
+    }
+}
+
+pub const V4_OFFSETS: Offsets = Offsets {
+    groove: 0xEE,
+    song: 0x2EE,
+    phrases: 0xAEE,
+    chains: 0x9A5E,
+    table: 0xBA3E,
+    instruments: 0x13A3E,
+    effect_settings: 0x1A5C1,
+    midi_mapping: 0x1A5FE,
+    bookmarks: 0x1A97E,
+    scale: 0x1AA7E,
+    eq: 0x1AD5A + 4,
+    instrument_eq_count: 32,
+    instrument_file_eq_offset: None,
+    groove_ppqn_offsets: None,
+    row_bookmark_offset: None,
+};
+
+pub const V4_1_OFFSETS: Offsets = Offsets {
+    groove: 0xEE,
+    song: 0x2EE,
+    phrases: 0xAEE,
+    chains: 0x9A5E,
+    table: 0xBA3E,
+    instruments: 0x13A3E,
+    effect_settings: 0x1A5C1,
+    midi_mapping: 0x1A5FE,
+    bookmarks: 0x1A97E,
+    scale: 0x1AA7E,
+    eq: 0x1AD5A + 4,
+    instrument_eq_count: 0x80,
+    instrument_file_eq_offset: Some(0x165),
+    groove_ppqn_offsets: Some(0x1B6A6),
+    row_bookmark_offset: Some(0x1B6C6),
+};
+
+////////////////////////////////////////////////////////////////////////////////////
+// MARK: Song
+////////////////////////////////////////////////////////////////////////////////////
+#[derive(PartialEq, Clone)]
+pub struct Song {
+    pub version: Version,
+    pub directory: String,
+    pub transpose: u8,
+    pub tempo: f32,
+    pub quantize: u8,
+    pub name: String,
+    pub key: u8,
+
+    pub song: SongSteps,
+    pub phrases: Vec<Phrase>,
+    pub chains: Vec<Chain>,
+    pub instruments: Vec<Instrument>,
+    pub tables: Vec<Table>,
+    pub grooves: Vec<Groove>,
+    pub scales: Vec<Scale>,
+
+    pub mixer_settings: MixerSettings,
+    pub effects_settings: EffectsSettings,
+    pub midi_settings: MidiSettings,
+    pub midi_mappings: Vec<MidiMapping>,
+    pub eqs: Vec<Equ>,
+}
+
+impl fmt::Debug for Song {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Song")
+            .field("version", &self.version)
+            .field("directory", &self.directory)
+            .field("name", &self.name)
+            .field("tempo", &self.tempo)
+            .field("transpose", &self.transpose)
+            .field("quantize", &self.quantize)
+            .field("key", &self.key)
+            .field("song", &self.song)
+            .field("chains", self.chains.first().unwrap_or(&Chain::default()))
+            .field("phrases", &self.phrase_view(0))
+            .field(
+                "instruments",
+                self.instruments.first().unwrap_or(&Instrument::default()),
+            )
+            .field("tables", &self.table_view(0))
+            .field("grooves", &self.grooves[0])
+            .field("scales", &self.scales[0])
+            .field("eqs", self.eqs.first().unwrap_or(&Equ::default()))
+            .field("mixer_settings", &self.mixer_settings)
+            .field("effects_settings", &self.effects_settings)
+            .field("midi_settings", &self.midi_settings)
+            .finish()
+    }
+}
+
+impl Song {
+    const SIZE_PRIOR_TO_2_5: usize = 0x1A970;
+    const SIZE: usize = 0x1AD09;
+    pub const N_PHRASES: usize = 255;
+    pub const N_CHAINS: usize = 255;
+    pub const N_INSTRUMENTS: usize = 128;
+    pub const N_TABLES: usize = 256;
+    pub const N_GROOVES: usize = 32;
+    pub const N_SCALES: usize = 16;
+
+    pub const N_MIDI_MAPPINGS: usize = 128;
+
+    pub fn phrase_view(&self, ix: usize) -> PhraseView<'_> {
+        self.phrase_view_with_templates(ix, ReferenceTemplating::default())
+    }
+
+    pub fn phrase_view_with_templates(
+        &self,
+        ix: usize,
+        templates: ReferenceTemplating,
+    ) -> PhraseView<'_> {
+        PhraseView {
+            phrase: &self.phrases[ix],
+            phrase_id: ix,
+            instruments: &self.instruments,
+            templates,
+        }
+    }
+
+    pub fn offsets(&self) -> &'static Offsets {
+        if self.version.after(&FIRMWARE_5_0_SONG_VERSION) {
+            &V4_1_OFFSETS
+        } else {
+            &V4_OFFSETS
+        }
+    }
+
+    pub fn eq_count(&self) -> usize {
+        self.offsets().eq_count()
+    }
+
+    pub fn table_view_with_templates(
+        &self,
+        ix: usize,
+        templates: ReferenceTemplating,
+    ) -> TableView<'_> {
+        TableView {
+            table: &self.tables[ix],
+            table_index: ix,
+            instrument: if ix < Song::N_INSTRUMENTS {
+                self.instruments[ix].instr_command_text(self.version)
+            } else {
+                CommandPack::default()
+            },
+            templates,
+        }
+    }
+
+    pub fn table_view(&self, ix: usize) -> TableView<'_> {
+        self.table_view_with_templates(ix, ReferenceTemplating::default())
+    }
+
+    pub fn eq_debug(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list().entries(self.eqs.iter()).finish()
+    }
+
+    pub fn read(reader: &mut impl std::io::Read) -> M8Result<Self> {
+        let mut buf: Vec<u8> = vec![];
+        reader.read_to_end(&mut buf).unwrap();
+        let mut reader = Reader::new(buf);
+        Self::read_from_reader(&mut reader)
+    }
+
+    pub fn read_from_reader(reader: &mut Reader) -> M8Result<Self> {
+        if reader.len() < Self::SIZE_PRIOR_TO_2_5 + Version::SIZE {
+            return Err(ParseError(
+                "File is not long enough to be a M8 song".to_string(),
+            ));
+        }
+        let version = Version::from_reader(reader)?;
+        if version.at_least(2, 5) && reader.len() < Self::SIZE + Version::SIZE {
+            return Err(ParseError(
+                "File is not long enough to be a M8 song".to_string(),
+            ));
+        }
+
+        Self::from_reader(reader, version)
+    }
+
+    pub fn write(&self, w: &mut Writer) -> Result<(), String> {
+        if !self.version.after(&FIRMWARE_4_0_SONG_VERSION) {
+            Err(String::from(
+                "Only version 4.0 or above song can be rewritten",
+            ))
+        } else {
+            self.write_header(w);
+            self.write_patterns(V4_OFFSETS, w);
+            self.write_settings(w);
+            Ok(())
+        }
+    }
+
+    /// Version, song header, MIDI settings and mixer: mirror of the start of
+    /// `from_reader`.
+    fn write_header(&self, w: &mut Writer) {
+        // Version magic and number only: bytes 12-13 differ between song
+        // (0x00 0x00 in the corpus) and instrument files, so they stay as read.
+        w.seek(0);
+        w.write_string("M8VERSION", 10);
+        w.write((self.version.minor << 4) | self.version.patch);
+        w.write(self.version.major);
+        w.skip(2);
+        w.write_string(&self.directory, 128);
+        w.write(self.transpose);
+        let mut tempo = [0u8; 4];
+        LittleEndian::write_f32(&mut tempo, self.tempo);
+        w.write_bytes(&tempo);
+        w.write(self.quantize);
+        w.write_string(&self.name, 12);
+        self.midi_settings.write(w);
+        w.write(self.key);
+        w.skip(18);
+        self.mixer_settings.write(self.version, w);
+
+        w.seek(V4_OFFSETS.groove);
+        for groove in &self.grooves {
+            groove.write(w);
+        }
+    }
+
+    /// Sections after the instruments: effects, MIDI mappings, bookmarks,
+    /// scales, groove PPQN and row bookmarks.
+    fn write_settings(&self, w: &mut Writer) {
+        w.seek(V4_OFFSETS.effect_settings);
+        self.effects_settings.write(self.version, w);
+
+        w.seek(V4_OFFSETS.midi_mapping);
+        for mapping in &self.midi_mappings {
+            mapping.write(w);
+        }
+
+        if w.len() > V4_OFFSETS.bookmarks + SongSteps::ROW_COUNT {
+            w.seek(V4_OFFSETS.bookmarks);
+            w.write_bytes(&self.song.bookmarks);
+        }
+
+        if self.version.at_least(2, 5) {
+            w.seek(V4_OFFSETS.scale);
+            for scale in &self.scales {
+                scale.write(w);
+            }
+        }
+
+        if self.version.at_least(6, 5) {
+            if let Some(ofs) = V4_1_OFFSETS.groove_ppqn_offsets {
+                if w.len() >= ofs + self.grooves.len() {
+                    w.seek(ofs);
+                    for groove in &self.grooves {
+                        if let Some(ppqn) = groove.ppqn {
+                            w.write(ppqn);
+                        } else {
+                            w.skip(1);
+                        }
+                    }
+                }
+            }
+        }
+
+        if let (Some(rows), Some(ofs)) =
+            (&self.song.row_bookmarks, V4_1_OFFSETS.row_bookmark_offset)
+        {
+            if w.len() >= ofs + SongSteps::ROW_COUNT {
+                w.seek(ofs);
+                w.write_bytes(rows);
+            }
+        }
+    }
+
+    fn write_patterns(&self, ofs: Offsets, w: &mut Writer) {
+        w.seek(ofs.song);
+        w.write_bytes(&self.song.steps);
+
+        w.seek(ofs.phrases);
+        for ph in &self.phrases {
+            ph.write(w);
+        }
+
+        w.seek(ofs.chains);
+        for ch in &self.chains {
+            ch.write(w);
+        }
+
+        w.seek(ofs.table);
+        for table in &self.tables {
+            table.write(w);
+        }
+
+        w.seek(ofs.instruments);
+        for instr in &self.instruments {
+            let pos = w.pos();
+            instr.write(self.version, w);
+            w.seek(pos + Instrument::INSTRUMENT_MEMORY_SIZE);
+        }
+
+        w.seek(ofs.eq);
+        for eq in &self.eqs {
+            eq.write(w);
+        }
+    }
+
+    fn from_reader(reader: &mut Reader, version: Version) -> M8Result<Self> {
+        // TODO scale
+        let directory = reader.read_string(128);
+        let transpose = reader.read();
+        let tempo = LittleEndian::read_f32(reader.read_bytes(4));
+        let quantize = reader.read();
+        let name = reader.read_string(12);
+        let midi_settings = MidiSettings::try_from(&mut *reader)?;
+        let key = reader.read();
+        reader.read_bytes(18); // Skip
+        let mixer_settings = MixerSettings::from_reader(reader, version)?;
+
+        reader.set_pos(V4_OFFSETS.groove);
+        let mut grooves = (0..Self::N_GROOVES)
+            .map(|i| Groove::from_reader(reader, i as u8))
+            .collect::<M8Result<Vec<Groove>>>()?;
+        let mut song = SongSteps::from_reader(reader)?;
+        let phrases = (0..Self::N_PHRASES)
+            .map(|_| Phrase::from_reader(reader, version))
+            .collect::<M8Result<Vec<Phrase>>>()?;
+        let chains = (0..Self::N_CHAINS)
+            .map(|_| Chain::from_reader(reader))
+            .collect::<M8Result<Vec<Chain>>>()?;
+        let tables = (0..Self::N_TABLES)
+            .map(|_| Table::from_reader(reader, version))
+            .collect::<M8Result<Vec<Table>>>()?;
+
+        let instruments = (0..Self::N_INSTRUMENTS)
+            .map(|i| Instrument::from_reader(reader, i as u8, version))
+            .collect::<M8Result<Vec<Instrument>>>()?;
+
+        reader.set_pos(V4_OFFSETS.effect_settings);
+        let effects_settings = EffectsSettings::from_reader(reader, version)?;
+
+        reader.set_pos(V4_OFFSETS.midi_mapping);
+        let midi_mappings = (0..Self::N_MIDI_MAPPINGS)
+            .map(|_| MidiMapping::from_reader(reader))
+            .collect::<M8Result<Vec<MidiMapping>>>()?;
+
+        if reader.len() > V4_OFFSETS.bookmarks + SongSteps::ROW_COUNT {
+            song.bookmarks = reader.read_bytes(SongSteps::ROW_COUNT).try_into().unwrap();
+        }
+
+        let scales: Vec<Scale> = if version.at_least(2, 5) {
+            reader.set_pos(V4_OFFSETS.scale);
+            (0..Self::N_SCALES)
+                .map(|i| Scale::from_reader(reader, i as u8))
+                .collect::<M8Result<Vec<Scale>>>()?
+        } else {
+            (0..Self::N_SCALES)
+                .map(|i| Scale {
+                    number: i as u8,
+                    ..Scale::default()
+                })
+                .collect()
+        };
+
+        let eqs = if version.after(&FIRMWARE_4_0_SONG_VERSION) {
+            let ofs = if version.after(&FIRMWARE_5_0_SONG_VERSION) {
+                &V4_1_OFFSETS
+            } else {
+                &V4_OFFSETS
+            };
+
+            reader.set_pos(ofs.eq);
+            (0..ofs.instrument_eq_count)
+                .map(|_i| Equ::from_reader(reader))
+                .collect::<Vec<Equ>>()
+        } else {
+            vec![]
+        };
+
+        // for recent enough version we patch the PPQN information
+        if version.at_least(6, 5) {
+            if let Some(ppqn_offset) = V4_1_OFFSETS.groove_ppqn_offsets {
+                if reader.len() >= ppqn_offset + grooves.len() {
+                    reader.set_pos(ppqn_offset);
+
+                    for i in 0..grooves.len() {
+                        grooves[i].ppqn = Some(reader.read())
+                    }
+                }
+            }
+        }
+
+        // for recent enough version we patch the PPQN information
+        if version.at_least(6, 6) {
+            if let Some(row_bookmark_offset) = V4_1_OFFSETS.row_bookmark_offset {
+                if reader.len() >= row_bookmark_offset + SongSteps::ROW_COUNT {
+                    reader.set_pos(row_bookmark_offset);
+                    song.row_bookmarks =
+                        Some(reader.read_bytes(SongSteps::ROW_COUNT).try_into().unwrap())
+                }
+            }
+        }
+
+        Ok(Self {
+            version,
+            directory,
+            transpose,
+            tempo,
+            quantize,
+            name,
+            midi_settings,
+            key,
+            mixer_settings,
+            grooves,
+            song,
+            phrases,
+            chains,
+            tables,
+            instruments,
+            scales,
+            effects_settings,
+            midi_mappings,
+            eqs,
+        })
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////
+// MARK: SongSteps
+////////////////////////////////////////////////////////////////////////////////////
+#[derive(PartialEq, Clone)]
+pub struct SongSteps {
+    pub steps: [u8; SongSteps::TRACK_COUNT * SongSteps::ROW_COUNT],
+
+    /// Bit vector marking if any song step has a bookmark.
+    pub bookmarks: [u8; SongSteps::ROW_COUNT],
+
+    /// From firmware version 6.6 onwards
+    pub row_bookmarks: Option<[u8; SongSteps::ROW_COUNT]>,
+}
+
+impl SongSteps {
+    pub const TRACK_COUNT: usize = 8;
+    pub const ROW_COUNT: usize = 0x100;
+
+    /// Row go from 0 to SongSetps::ROW_COUNT - 1 and track goes from
+    /// 0 to SongSteps::TRACK_COUNT - 1 here.
+    pub fn is_bookmarked(&self, row: usize, track: usize) -> bool {
+        row < SongSteps::ROW_COUNT
+            && track < SongSteps::TRACK_COUNT
+            && (self.bookmarks[row] & (1 << track)) != 0
+    }
+
+    pub fn print_screen(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+        self.print_screen_from_to(f, 0, self.last_modified_row() as u8)
+    }
+
+    pub fn last_modified_row(&self) -> usize {
+        for row in (0..SongSteps::ROW_COUNT).rev() {
+            let ix = row * SongSteps::TRACK_COUNT;
+
+            let is_empty = self.steps[ix..ix + SongSteps::TRACK_COUNT]
+                .iter()
+                .all(|v| *v == 0xFF);
+
+            if !is_empty {
+                return row;
+            }
+        }
+
+        SongSteps::ROW_COUNT
+    }
+
+    pub fn print_screen_from_to(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        start: u8,
+        end: u8,
+    ) -> std::fmt::Result {
+        writeln!(f, "   1  2  3  4  5  6  7  8  ")?;
+
+        for row in start as usize..min(0xFF, (end as usize) + 1) {
+            self.print_row(f, row as u8)?;
+            writeln!(f)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn print_row(&self, f: &mut fmt::Formatter<'_>, row: u8) -> std::fmt::Result {
+        let start = row as usize * 8;
+
+        write!(f, "{row:02x} ")?;
+
+        for bix in start..start + 8 {
+            let v = self.steps[bix];
+
+            if v == 0xFF {
+                write!(f, "-- ")?
+            } else {
+                write!(f, "{:02x} ", v)?
+            }
+        }
+
+        Ok(())
+    }
+
+    fn from_reader(reader: &mut Reader) -> M8Result<Self> {
+        Ok(Self {
+            steps: reader.read_bytes(2048).try_into().unwrap(),
+            bookmarks: [0; SongSteps::ROW_COUNT],
+            row_bookmarks: None,
+        })
+    }
+}
+
+impl fmt::Display for SongSteps {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "SONG\n\n")?;
+        self.print_screen(f)
+    }
+}
+
+impl fmt::Debug for SongSteps {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////
+// MARK: Chains
+////////////////////////////////////////////////////////////////////////////////////
+#[derive(PartialEq, Clone, Default)]
+pub struct Chain {
+    pub steps: [ChainStep; 16],
+}
+
+impl Chain {
+    pub const V4_SIZE: usize = ChainStep::V4_SIZE * 16;
+
+    pub fn is_empty(&self) -> bool {
+        self.steps.iter().all(|s| s.is_empty())
+    }
+
+    pub fn clear(&mut self) {
+        let dflt = ChainStep::default();
+
+        self.steps.fill(dflt);
+    }
+
+    pub fn print_screen(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "  PH TSP")?;
+
+        for row in 0..16 {
+            self.steps[row].print(f, row as u8)?;
+            writeln!(f)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn map(&self, mapping: &PhraseMapping) -> Self {
+        let mut nc = self.clone();
+
+        for i in 0..16 {
+            nc.steps[i] = nc.steps[i].map(mapping);
+        }
+
+        nc
+    }
+
+    pub fn write(&self, w: &mut Writer) {
+        for cs in &self.steps {
+            cs.write(w)
+        }
+    }
+
+    pub fn from_reader(reader: &mut Reader) -> M8Result<Self> {
+        Ok(Self {
+            steps: arr![ChainStep::from_reader(reader)?; 16],
+        })
+    }
+}
+
+impl fmt::Display for Chain {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "CHAIN\n\n")?;
+        self.print_screen(f)
+    }
+}
+impl fmt::Debug for Chain {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+#[derive(PartialEq, Debug, Clone, Copy)]
+pub struct ChainStep {
+    pub phrase: u8,
+    pub transpose: u8,
+}
+
+impl Default for ChainStep {
+    fn default() -> Self {
+        Self {
+            phrase: 255,
+            transpose: 0,
+        }
+    }
+}
+
+impl ChainStep {
+    pub const V4_SIZE: usize = 2;
+
+    pub fn is_empty(self) -> bool {
+        self.phrase == 0xFF
+    }
+
+    pub fn print(&self, f: &mut fmt::Formatter<'_>, row: u8) -> std::fmt::Result {
+        if self.is_empty() {
+            write!(f, "{:x} -- 00", row)
+        } else {
+            write!(f, "{:x} {:02x} {:02x}", row, self.phrase, self.transpose)
+        }
+    }
+
+    pub fn map(&self, mapping: &PhraseMapping) -> Self {
+        let phrase_ix = self.phrase as usize;
+        let phrase = if phrase_ix >= Song::N_PHRASES {
+            self.phrase
+        } else {
+            mapping.mapping[phrase_ix]
+        };
+
+        Self {
+            phrase,
+            transpose: self.transpose,
+        }
+    }
+
+    pub fn write(&self, w: &mut Writer) {
+        w.write(self.phrase);
+        w.write(self.transpose);
+    }
+
+    fn from_reader(reader: &mut Reader) -> M8Result<Self> {
+        Ok(Self {
+            phrase: reader.read(),
+            transpose: reader.read(),
+        })
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////
+// MARK: Phrase
+////////////////////////////////////////////////////////////////////////////////////
+#[derive(PartialEq, Clone, Default)]
+pub struct Phrase {
+    pub steps: [Step; 16],
+    version: Version,
+}
+
+impl Phrase {
+    pub const V4_SIZE: usize = 16 * Step::V4_SIZE;
+
+    pub fn is_empty(&self) -> bool {
+        self.steps.iter().all(|s| s.is_empty())
+    }
+
+    /// Initialize an empty phrase with a given version
+    pub fn default_ver(version: Version) -> Phrase {
+        Phrase {
+            version,
+            steps: [
+                Step::default(),
+                Step::default(),
+                Step::default(),
+                Step::default(),
+                Step::default(),
+                Step::default(),
+                Step::default(),
+                Step::default(),
+                Step::default(),
+                Step::default(),
+                Step::default(),
+                Step::default(),
+                Step::default(),
+                Step::default(),
+                Step::default(),
+                Step::default(),
+            ],
+        }
+    }
+
+    pub fn clear(&mut self) {
+        for s in &mut self.steps {
+            s.clear();
+        }
+    }
+
+    pub(crate) fn print_screen(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        instruments: &[Instrument],
+        templates: &ReferenceTemplating,
+    ) -> std::fmt::Result {
+        let mut cmd_pack = CommandPack::default();
+        let fx_commands = FX::fx_command_names(self.version);
+
+        writeln!(f, "  N   V  I  FX1   FX2   FX3  ")?;
+
+        for i in 0..16 {
+            let step = &self.steps[i];
+            let instrument = step.instrument as usize;
+
+            if instrument < Song::N_INSTRUMENTS {
+                cmd_pack = instruments[instrument].instr_command_text(self.version);
+            }
+
+            step.print(f, i as u8, fx_commands, cmd_pack, templates)?;
+            writeln!(f)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn map_instruments(
+        &self,
+        instrument_mapping: &InstrumentMapping,
+        table_mapping: &TableMapping,
+        eq_mapping: &EqMapping,
+    ) -> Self {
+        let mut steps = self.steps.clone();
+        for i in 0..steps.len() {
+            steps[i] = steps[i].map_instr(instrument_mapping, table_mapping, eq_mapping);
+        }
+
+        Self {
+            steps,
+            version: self.version,
+        }
+    }
+
+    pub fn write(&self, w: &mut Writer) {
+        for s in &self.steps {
+            s.write(w);
+        }
+    }
+
+    pub fn from_reader(reader: &mut Reader, version: Version) -> M8Result<Self> {
+        Ok(Self {
+            steps: arr![Step::from_reader(reader)?; 16],
+            version,
+        })
+    }
+}
+
+pub struct PhraseView<'a> {
+    phrase: &'a Phrase,
+    phrase_id: usize,
+    instruments: &'a [Instrument],
+    templates: ReferenceTemplating,
+}
+
+impl<'a> fmt::Display for PhraseView<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "PHRASE {:02X}\n\n", self.phrase_id)?;
+        self.phrase
+            .print_screen(f, self.instruments, &self.templates)
+    }
+}
+
+impl<'a> fmt::Debug for PhraseView<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+#[derive(PartialEq, Debug, Clone, Default)]
+pub struct Step {
+    pub note: Note,
+    pub velocity: u8,
+    pub instrument: u8,
+    pub fx1: FX,
+    pub fx2: FX,
+    pub fx3: FX,
+}
+
+impl Step {
+    pub const V4_SIZE: usize = 3 + 3 * FX::V4_SIZE;
+
+    pub fn all_fx(&self) -> [FX; 3] {
+        [self.fx1, self.fx2, self.fx3]
+    }
+
+    pub fn print(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        row: u8,
+        fx_cmds: FxCommands,
+        cmd_pack: CommandPack,
+        templates: &ReferenceTemplating,
+    ) -> std::fmt::Result {
+        let velocity = if self.velocity == 255 {
+            "--".to_string()
+        } else {
+            format!("{:02x}", self.velocity)
+        };
+
+        let instrument = if self.instrument == 255 {
+            "--".to_string()
+        } else {
+            templates
+                .try_instrument_templating(self.instrument)
+                .unwrap_or_else(|| format!("{:02x}", self.instrument))
+        };
+
+        write!(
+            f,
+            "{:x} {} {} {} {} {} {}",
+            row,
+            self.note,
+            velocity,
+            instrument,
+            self.fx1.print(fx_cmds, cmd_pack, templates),
+            self.fx2.print(fx_cmds, cmd_pack, templates),
+            self.fx3.print(fx_cmds, cmd_pack, templates)
+        )
+    }
+
+    pub fn clear(&mut self) {
+        self.note = Note::default();
+        self.velocity = 0xFF;
+        self.instrument = 0xFF;
+        self.fx1 = FX::default();
+        self.fx2 = FX::default();
+        self.fx3 = FX::default();
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.note.is_empty()
+            && self.velocity == 0xFF
+            && self.instrument == 0xFF
+            && self.fx1.is_empty()
+            && self.fx2.is_empty()
+            && self.fx3.is_empty()
+    }
+
+    pub fn map_instr(
+        &self,
+        instrument_mapping: &InstrumentMapping,
+        table_mapping: &TableMapping,
+        eq_mapping: &EqMapping,
+    ) -> Step {
+        let instrument = if (self.instrument as usize) >= Song::N_INSTRUMENTS {
+            self.instrument
+        } else {
+            instrument_mapping.mapping[self.instrument as usize]
+        };
+
+        Self {
+            note: self.note,
+            velocity: self.velocity,
+            instrument,
+            fx1: self
+                .fx1
+                .map_instr(instrument_mapping, table_mapping, eq_mapping),
+            fx2: self
+                .fx2
+                .map_instr(instrument_mapping, table_mapping, eq_mapping),
+            fx3: self
+                .fx3
+                .map_instr(instrument_mapping, table_mapping, eq_mapping),
+        }
+    }
+
+    pub fn write(&self, w: &mut Writer) {
+        w.write(self.note.0);
+        w.write(self.velocity);
+        w.write(self.instrument);
+        self.fx1.write(w);
+        self.fx2.write(w);
+        self.fx3.write(w);
+    }
+
+    fn from_reader(reader: &mut Reader) -> M8Result<Self> {
+        Ok(Self {
+            note: Note(reader.read()),
+            velocity: reader.read(),
+            instrument: reader.read(),
+            fx1: FX::from_reader(reader)?,
+            fx2: FX::from_reader(reader)?,
+            fx3: FX::from_reader(reader)?,
+        })
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////
+// MARK: Note
+////////////////////////////////////////////////////////////////////////////////////
+#[derive(PartialEq, Debug, Clone, Copy)]
+pub struct Note(pub u8);
+
+impl Note {
+    pub fn is_empty(self) -> bool {
+        self.0 == 0xFF
+    }
+}
+
+impl Default for Note {
+    fn default() -> Self {
+        Note(255)
+    }
+}
+
+const NOTES: [&str; 12] = [
+    "C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-", "A#", "B-",
+];
+
+impl fmt::Display for Note {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.0 == 255 {
+            write!(f, "---")
+        } else if self.0 >= 0x80 {
+            write!(f, "OFF") // This isn't really true for < V3
+        } else {
+            let oct = (self.0 / 12) + 1;
+            let n = NOTES[(self.0 % 12) as usize];
+            write!(f, "{}{:X}", n, oct)
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////
+// MARK: Table
+////////////////////////////////////////////////////////////////////////////////////
+#[derive(PartialEq, Clone)]
+pub struct Table {
+    pub steps: [TableStep; 16],
+    version: Version,
+}
+impl Table {
+    pub const V4_SIZE: usize = 16 * TableStep::V4_SIZE;
+
+    /// Initialize an empty table with a given version
+    pub fn default_ver(version: Version) -> Table {
+        Table {
+            version,
+            steps: [
+                TableStep::default(),
+                TableStep::default(),
+                TableStep::default(),
+                TableStep::default(),
+                TableStep::default(),
+                TableStep::default(),
+                TableStep::default(),
+                TableStep::default(),
+                TableStep::default(),
+                TableStep::default(),
+                TableStep::default(),
+                TableStep::default(),
+                TableStep::default(),
+                TableStep::default(),
+                TableStep::default(),
+                TableStep::default(),
+            ],
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.steps.iter().all(|s| s.is_empty())
+    }
+
+    pub fn clear(&mut self) {
+        let dflt = TableStep::default();
+
+        for s in &mut self.steps {
+            *s = dflt.clone();
+        }
+    }
+
+    pub fn map_instr(
+        &self,
+        instr_mapping: &InstrumentMapping,
+        table_mapping: &TableMapping,
+        eq_mapping: &EqMapping,
+    ) -> Self {
+        let mut steps = self.steps.clone();
+
+        for i in 0..16 {
+            steps[i] = steps[i].map_instr(instr_mapping, table_mapping, eq_mapping);
+        }
+
+        Self {
+            version: self.version,
+            steps,
+        }
+    }
+
+    pub(crate) fn print_screen(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        cmd: CommandPack,
+        templates: &ReferenceTemplating,
+    ) -> std::fmt::Result {
+        let fx_cmd = FX::fx_command_names(self.version);
+        writeln!(f, "  N  V  FX1   FX2   FX3  ")?;
+
+        for i in 0..16 {
+            let step = &self.steps[i];
+
+            step.print(f, i as u8, fx_cmd, cmd, templates)?;
+            writeln!(f)?
+        }
+
+        Ok(())
+    }
+
+    pub fn write(&self, w: &mut Writer) {
+        for ts in &self.steps {
+            ts.write(w);
+        }
+    }
+
+    pub fn from_reader(reader: &mut Reader, version: Version) -> M8Result<Self> {
+        Ok(Self {
+            steps: arr![TableStep::from_reader(reader)?; 16],
+            version,
+        })
+    }
+}
+
+#[derive(Default)]
+pub enum ReferenceTemplating {
+    #[default]
+    NoTemplate,
+    WithTemplates {
+        instrument: Option<String>,
+        instrument_command: Option<String>,
+        table: Option<String>,
+        eq: Option<String>,
+    },
+}
+
+impl ReferenceTemplating {
+    fn apply_cmd_template(template: &str, cmd: &str, value: u8) -> Option<String> {
+        Some(
+            template
+                .replace("{HEX}", &format!("{:02X}", value))
+                .replace("{CMD}", cmd),
+        )
+    }
+
+    pub fn try_instrument_templating(&self, value: u8) -> Option<String> {
+        match self {
+            ReferenceTemplating::NoTemplate => None,
+            ReferenceTemplating::WithTemplates {
+                instrument: Some(it),
+                instrument_command: _,
+                table: _,
+                eq: _,
+            } => Some(it.replace("{HEX}", &format!("{:02X}", value))),
+            ReferenceTemplating::WithTemplates {
+                instrument: _,
+                instrument_command: _,
+                table: _,
+                eq: _,
+            } => None,
+        }
+    }
+
+    pub fn try_template(&self, command: &str, value: u8) -> Option<String> {
+        let (instr, table, eqq) = match self {
+            ReferenceTemplating::NoTemplate => return None,
+            ReferenceTemplating::WithTemplates {
+                instrument: _,
+                instrument_command,
+                table,
+                eq,
+            } => (instrument_command, table, eq),
+        };
+
+        if let Some(it) = instr {
+            if INSTRUMENT_TRACKING_COMMAND_NAMES.contains(&command) {
+                return ReferenceTemplating::apply_cmd_template(it, command, value);
+            }
+        }
+
+        if let Some(tt) = table {
+            if TABLE_TRACKING_COMMAND_NAMES.contains(&command) {
+                return ReferenceTemplating::apply_cmd_template(tt, command, value);
+            }
+        }
+
+        if let Some(et) = eqq {
+            if EQ_TRACKING_COMMAND_NAMES.contains(&command) {
+                return ReferenceTemplating::apply_cmd_template(et, command, value);
+            }
+        }
+
+        None
+    }
+}
+
+pub struct TableView<'a> {
+    pub(crate) table: &'a Table,
+    pub(crate) table_index: usize,
+    pub(crate) instrument: CommandPack,
+
+    pub(crate) templates: ReferenceTemplating,
+}
+
+impl<'a> fmt::Display for TableView<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "TABLE {:02X}\n\n", self.table_index)?;
+        self.table.print_screen(f, self.instrument, &self.templates)
+    }
+}
+
+impl<'a> fmt::Debug for TableView<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct TableStep {
+    pub transpose: u8,
+    pub velocity: u8,
+    pub fx1: FX,
+    pub fx2: FX,
+    pub fx3: FX,
+}
+
+impl Default for TableStep {
+    fn default() -> Self {
+        Self {
+            transpose: 0,
+            velocity: 0xFF,
+            fx1: Default::default(),
+            fx2: Default::default(),
+            fx3: Default::default(),
+        }
+    }
+}
+
+impl TableStep {
+    pub const V4_SIZE: usize = 2 + 3 * FX::V4_SIZE;
+
+    pub fn all_fx(&self) -> [FX; 3] {
+        [self.fx1, self.fx2, self.fx3]
+    }
+
+    pub fn map_instr(
+        &self,
+        instr_mapping: &InstrumentMapping,
+        table_mapping: &TableMapping,
+        eq_mapping: &EqMapping,
+    ) -> TableStep {
+        Self {
+            transpose: self.transpose,
+            velocity: self.velocity,
+            fx1: self.fx1.map_instr(instr_mapping, table_mapping, eq_mapping),
+            fx2: self.fx2.map_instr(instr_mapping, table_mapping, eq_mapping),
+            fx3: self.fx3.map_instr(instr_mapping, table_mapping, eq_mapping),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.transpose == 0
+            && self.velocity == 0xFF
+            && self.fx1.is_empty()
+            && self.fx2.is_empty()
+            && self.fx3.is_empty()
+    }
+
+    pub fn print(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        row: u8,
+        fx_cmd: FxCommands,
+        cmds: CommandPack,
+        templates: &ReferenceTemplating,
+    ) -> std::fmt::Result {
+        let transpose = if self.transpose == 255 {
+            "--".to_string()
+        } else {
+            format!("{:02x}", self.transpose)
+        };
+
+        let velocity = if self.velocity == 255 {
+            "--".to_string()
+        } else {
+            format!("{:02x}", self.velocity)
+        };
+
+        write!(
+            f,
+            "{:x} {} {} {} {} {}",
+            row,
+            transpose,
+            velocity,
+            self.fx1.print(fx_cmd, cmds, templates),
+            self.fx2.print(fx_cmd, cmds, templates),
+            self.fx3.print(fx_cmd, cmds, templates)
+        )
+    }
+
+    pub fn write(&self, w: &mut Writer) {
+        w.write(self.transpose);
+        w.write(self.velocity);
+        self.fx1.write(w);
+        self.fx2.write(w);
+        self.fx3.write(w);
+    }
+
+    fn from_reader(reader: &mut Reader) -> M8Result<Self> {
+        Ok(Self {
+            transpose: reader.read(),
+            velocity: reader.read(),
+            fx1: FX::from_reader(reader)?,
+            fx2: FX::from_reader(reader)?,
+            fx3: FX::from_reader(reader)?,
+        })
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////
+// MARK: Groove
+////////////////////////////////////////////////////////////////////////////////////
+#[derive(PartialEq, Clone)]
+pub struct Groove {
+    pub number: u8,
+    pub steps: [u8; 16],
+
+    /// PPQN is stored elsewhere than the groove, so
+    /// it is edited at a later step (if available)
+    pub ppqn: Option<u8>,
+}
+
+impl Display for Groove {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "GROOVE {:02X}\n\n", self.number)?;
+
+        if self.ppqn.is_some() {
+            writeln!(f, "PPQN: {}", self.active_ppqn())?;
+        } else {
+            writeln!(f, "PPQN: 24 (not filled)")?;
+        }
+
+        for step in self.steps {
+            if step == 0xFF {
+                writeln!(f, "--")?;
+            } else {
+                writeln!(f, "{:02X}", step)?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl Groove {
+    fn from_reader(reader: &mut Reader, number: u8) -> M8Result<Self> {
+        Ok(Self {
+            number,
+            steps: reader.read_bytes(16).try_into().unwrap(),
+            ppqn: None,
+        })
+    }
+
+    pub fn active_ppqn(&self) -> usize {
+        match self.ppqn {
+            None => 24,
+            Some(0) => 24,
+            Some(1) => 48,
+            Some(2) => 96,
+            Some(3) => 192,
+            _ => 24,
+        }
+    }
+
+    pub fn write(&self, w: &mut Writer) {
+        w.write_bytes(&self.steps);
+    }
+
+    pub fn active_steps(&self) -> &[u8] {
+        let end = self.steps.iter().position(|&x| x == 255).unwrap_or(15);
+        &self.steps[0..end]
+    }
+}
+
+impl fmt::Debug for Groove {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////
+// MARK: Tests
+////////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+#[allow(clippy::match_like_matches_macro)]
+mod tests {
+    use crate::songs::*;
+    use std::fs::File;
+
+    fn test_file() -> Song {
+        let mut f = File::open("./examples/songs/TEST-FILE.m8s").expect("Could not open TEST-FILE");
+        Song::read(&mut f).expect("Could not parse TEST-FILE")
+    }
+
+    #[test]
+    fn test_instrument_reading() {
+        let test_file = test_file();
+        // dbg!(&test_file.instruments[0..8]);
+        assert!(match &test_file.instruments[0] {
+            Instrument::None => true,
+            _ => false,
+        });
+        assert!(
+            match &test_file.instruments[1] {
+                Instrument::WavSynth(s) => {
+                    assert!(s.transpose);
+                    assert_eq!(s.size, 0x20);
+                    assert_eq!(s.synth_params.mixer_reverb, 0xD0);
+                    assert!(match s.synth_params.mods[0] {
+                        Mod::AHDEnv(_) => true,
+                        _ => false,
+                    });
+                    assert!(match s.synth_params.mods[1] {
+                        Mod::ADSREnv(_) => true,
+                        _ => false,
+                    });
+                    assert!(match s.synth_params.mods[2] {
+                        Mod::DrumEnv(_) => true,
+                        _ => false,
+                    });
+                    assert!(match s.synth_params.mods[3] {
+                        Mod::LFO(_) => true,
+                        _ => false,
+                    });
+
+                    true
+                }
+                _ => false,
+            },
+            "Should be a WavSynth"
+        );
+        assert!(match &test_file.instruments[2] {
+            Instrument::MacroSynth(s) => {
+                assert!(!s.transpose);
+                assert!(match s.synth_params.mods[0] {
+                    Mod::TrigEnv(_) => true,
+                    _ => false,
+                });
+                assert!(match s.synth_params.mods[1] {
+                    Mod::TrackingEnv(_) => true,
+                    _ => false,
+                });
+                assert!(match s.synth_params.mods[2] {
+                    Mod::LFO(_) => true,
+                    _ => false,
+                });
+                assert!(match s.synth_params.mods[3] {
+                    Mod::LFO(_) => true,
+                    _ => false,
+                });
+
+                true
+            }
+            _ => false,
+        });
+        assert!(match &test_file.instruments[3] {
+            Instrument::Sampler(s) => {
+                assert!(match s.synth_params.mods[0] {
+                    Mod::AHDEnv(_) => true,
+                    _ => false,
+                });
+                assert!(match s.synth_params.mods[1] {
+                    Mod::AHDEnv(_) => true,
+                    _ => false,
+                });
+                assert!(match s.synth_params.mods[2] {
+                    Mod::LFO(_) => true,
+                    _ => false,
+                });
+                assert!(match s.synth_params.mods[3] {
+                    Mod::LFO(_) => true,
+                    _ => false,
+                });
+
+                assert_eq!(&s.name, "SAMP");
+                assert_eq!(
+                    &s.sample_path,
+                    "/Samples/Drums/Hits/TR505/bass drum 505.wav"
+                );
+
+                true
+            }
+            _ => false,
+        });
+        assert!(match &test_file.instruments[4] {
+            Instrument::FMSynth(s) => {
+                assert!(match s.synth_params.mods[0] {
+                    Mod::AHDEnv(_) => true,
+                    _ => false,
+                });
+                assert!(match s.synth_params.mods[1] {
+                    Mod::AHDEnv(_) => true,
+                    _ => false,
+                });
+                assert!(match s.synth_params.mods[2] {
+                    Mod::LFO(_) => true,
+                    _ => false,
+                });
+                assert!(match s.synth_params.mods[3] {
+                    Mod::LFO(_) => true,
+                    _ => false,
+                });
+
+                true
+            }
+            _ => false,
+        });
+        assert!(match &test_file.instruments[5] {
+            Instrument::HyperSynth(s) => {
+                assert!(match s.synth_params.mods[0] {
+                    Mod::AHDEnv(_) => true,
+                    _ => false,
+                });
+                assert!(match s.synth_params.mods[1] {
+                    Mod::AHDEnv(_) => true,
+                    _ => false,
+                });
+                assert!(match s.synth_params.mods[2] {
+                    Mod::LFO(_) => true,
+                    _ => false,
+                });
+                assert!(match s.synth_params.mods[3] {
+                    Mod::LFO(_) => true,
+                    _ => false,
+                });
+                assert_eq!(s.scale, 0xFF);
+                assert_eq!(s.default_chord[0], 0x01);
+                assert_eq!(s.default_chord[6], 0x3C);
+
+                true
+            }
+            _ => false,
+        });
+        assert!(match &test_file.instruments[6] {
+            Instrument::MIDIOut(s) => {
+                assert!(match s.mods.mods[0] {
+                    Mod::AHDEnv(_) => true,
+                    _ => false,
+                });
+                assert!(match s.mods.mods[1] {
+                    Mod::AHDEnv(_) => true,
+                    _ => false,
+                });
+                assert!(match s.mods.mods[2] {
+                    Mod::LFO(_) => true,
+                    _ => false,
+                });
+                assert!(match s.mods.mods[3] {
+                    Mod::LFO(_) => true,
+                    _ => false,
+                });
+                true
+            }
+            _ => false,
+        });
+        assert!(match &test_file.instruments[7] {
+            Instrument::External(s) => {
+                assert!(match s.synth_params.mods[0] {
+                    Mod::AHDEnv(_) => true,
+                    _ => false,
+                });
+                assert!(match s.synth_params.mods[1] {
+                    Mod::AHDEnv(_) => true,
+                    _ => false,
+                });
+                assert!(match s.synth_params.mods[2] {
+                    Mod::LFO(_) => true,
+                    _ => false,
+                });
+                assert!(match s.synth_params.mods[3] {
+                    Mod::LFO(_) => true,
+                    _ => false,
+                });
+
+                assert_eq!(s.cca.number, 1);
+                assert_eq!(s.ccb.number, 2);
+                assert_eq!(s.ccd.number, 4);
+                true
+            }
+            _ => false,
+        });
+    }
+
+    #[test]
+    fn test_mixer_reading() {
+        let test_file = test_file();
+        // dbg!(&test_file.mixer_settings);
+        assert_eq!(test_file.mixer_settings.track_volume[0], 0xE0);
+        assert_eq!(test_file.mixer_settings.track_volume[7], 0xE0);
+        assert_eq!(test_file.mixer_settings.dj_filter, 0x80);
+        assert_eq!(test_file.mixer_settings.dj_filter_type, 0x02);
+    }
+
+    #[test]
+    fn test_song_reading() {
+        let test_file = test_file();
+        // dbg!(&test_file);
+        assert_eq!(test_file.name, "TEST-FILE");
+        assert_eq!(test_file.tempo, 120.0);
+        assert_eq!(test_file.transpose, 0x0C);
+        assert_eq!(test_file.quantize, 0x02);
+    }
+}

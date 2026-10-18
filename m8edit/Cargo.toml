@@ -1,0 +1,11 @@
+[package]
+name = "m8edit"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "Edit model for M8 songs: commands, value steps, clipboard, undo. Owned by Codex"
+
+[dependencies]
+m8fmt = { path = "../m8fmt" }
+m8view = { path = "../m8view" }

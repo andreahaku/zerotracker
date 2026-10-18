@@ -1,0 +1,17 @@
+# Build output
+/target/
+/build/
+/.cache/
+/tools/corpus-test/target/
+
+# M8 user data: never commit (see BRIEF.md, section 2)
+*.m8s
+*.m8i
+*.m8t
+*.m8n
+*.wav
+*.pcm
+*.img
+/m8fmt/examples/
+/dist/
+/content/

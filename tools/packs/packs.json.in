@@ -1,0 +1,55 @@
+{
+  "base_url": "https://github.com/andreahaku/zerotracker/releases/download/library/",
+  "packs": [
+    {
+      "id": "floor-baba",
+      "name": "FLOOR BABA LAB",
+      "kind": "samples",
+      "description": "Basses, drums, loops and pads recorded on FLOOR BABA's own synths",
+      "authors": "FLOOR BABA",
+      "licence": "CC0-1.0",
+      "licence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "paths": [
+        "Samples/FLOOR_BABA-BABA_LAB_INGREDIENTS"
+      ],
+      "exclude": [
+        "MISC/Best Service *",
+        "MISC/Big Fish *",
+        "*PROTEUS 2000*",
+        "*proteus 2000*",
+        "*M3R*",
+        "*SH4d*",
+        "MISC/Gennady *",
+        "!README.txt"
+      ],
+      "source": {
+        "type": "files",
+        "base": "https://archive.org/download/FLOOR-BABA-BABA-LAB-INGREDIENTS/FLOOR%20BABA%20-%20BABA%20LAB%20INGREDIENTS/"
+      }
+    },
+    {
+      "id": "jam41-space-samples",
+      "name": "JAM 41 SPACE SAMPLES",
+      "kind": "samples",
+      "description": "Kits, loops, effects and speech from public-domain and CC0 sources",
+      "authors": "curated by Ineffable Twaddle",
+      "licence": "CC0-1.0",
+      "licence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "paths": [
+        "Samples/M8CJ_Jam_41_Space-Sample_Pack"
+      ]
+    },
+    {
+      "id": "mrdrcat",
+      "name": "MRDRCAT SAMPLES",
+      "kind": "samples",
+      "description": "Samples made by MrdrCat or in the public domain",
+      "authors": "MrdrCat",
+      "licence": "CC0-1.0",
+      "licence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "paths": [
+        "Samples/MrdrCat_Samples"
+      ]
+    }
+  ]
+}

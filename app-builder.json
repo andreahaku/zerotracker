@@ -1,0 +1,34 @@
+{
+  "app_name": "ZeroTracker",
+  "package_name": "zerotracker",
+  "version": "0.1.0",
+  "description": "Music tracker for the CardputerZero",
+  "store": {
+    "summary": "TODO: one line about your app (placeholders are auto-rejected)",
+    "description": "TODO: a longer description for the store detail page. Every TODO field in this store section must be replaced before publishing \u2014 the store validator rejects unedited template metadata.",
+    "categories": [
+      "TODO: pick 1-2 real categories from docs/APP_BUILDER_JSON.md"
+    ],
+    "screenshots": [
+      "screenshot/app-simulator-dark-darwin.png",
+      "screenshot/app-simulator-light-darwin.png"
+    ],
+    "icon": "assets/images/template.png",
+    "license": "GPL-3.0-or-later",
+    "source_repo": "https://github.com/CardputerZero/Template",
+    "author": {
+      "github": "TODO-your-github-login",
+      "display_name": "TODO: Your Name"
+    },
+    "share_code": "TODO",
+    "permissions": {
+      "camera": false,
+      "microphone": false,
+      "imu": false,
+      "network": false,
+      "additional_hardware": false,
+      "background_service": false,
+      "external_display": false
+    }
+  }
+}
