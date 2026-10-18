@@ -8,8 +8,6 @@
 
 #include "asset_manager.h"
 #include "bindings.h"
-#include "zt_engine.h"
-#include "zt_fmt.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -57,23 +55,6 @@ void info_visible_observer(lv_observer_t* observer, lv_subject_t* subject) {
     }
 }
 
-// Renders 256 frames of the engine test tone and returns the peak sample.
-int rust_tone_peak() {
-    ZtEngine* engine = zt_engine_create(44100, 1);
-    if (!engine) {
-        return -1;
-    }
-    int16_t buffer[256 * 2] = {};
-    int peak = 0;
-    if (zt_engine_render(engine, buffer, 256, 2)) {
-        for (int16_t sample : buffer) {
-            peak = std::max(peak, std::abs(static_cast<int>(sample)));
-        }
-    }
-    zt_engine_destroy(engine);
-    return peak;
-}
-
 } // namespace
 
 AppleScreen::AppleScreen(viewmodel::BaseViewModel& view_model, app::AssetManager& assets)
@@ -112,12 +93,6 @@ void AppleScreen::build_content(lv_obj_t* content) {
     }
     lv_subject_add_observer_obj(view_model().info_visible_subject(), info_visible_observer, info, nullptr);
     reactive::bind_theme(info, view_model().dark_mode_subject(), reactive::ThemeRole::Text);
-
-    // Phase 0 FFI proof: both values below are computed by the Rust core.
-    auto* core = lv_label_create(group);
-    lv_label_set_text_fmt(core, "core %s  tone peak %d", zt_core_version(), rust_tone_peak());
-    lv_obj_set_style_text_font(core, info_font ? info_font : &lv_font_montserrat_12, 0);
-    reactive::bind_theme(core, view_model().dark_mode_subject(), reactive::ThemeRole::Text);
 
     auto* hints = lv_obj_create(group);
     lv_obj_remove_style_all(hints);

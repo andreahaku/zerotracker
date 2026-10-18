@@ -327,7 +327,7 @@ int Application::run() {
     ScreenManager screen_manager(view_model, assets);
     screen_manager.start();
 
-    // Phase 0 audio check: ZT_TEST_TONE=<seconds> plays the engine test tone.
+    // Audio check for development: ZT_TEST_TONE=<seconds> plays the engine test tone.
     if (const char* tone = std::getenv("ZT_TEST_TONE")) {
         platform::audio::start_test_tone(std::atof(tone));
     }

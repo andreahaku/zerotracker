@@ -1209,7 +1209,7 @@ pub unsafe extern "C" fn zt_viewer_save(viewer: *mut Viewer) -> i32 {
 }
 
 /// Undo (`redo` = 0) or redo (`redo` = 1) the last edit. Returns 1 when
-/// something changed. Wired to m8edit in phase 3; no-op until then.
+/// something changed (m8edit's history).
 ///
 /// # Safety
 ///

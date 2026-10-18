@@ -1,4 +1,4 @@
-//! Phase 6 pages (docs/plan-phase6.md): TIMELINE (the SONG view turned 90
+//! The app pages: TIMELINE (the SONG view turned 90
 //! degrees), MIXER, TRACKS and SONG. Each page renders a grid of exactly the
 //! size the app asks for, with highlight spans for what plain text cannot
 //! show (playing chains in bold, muted tracks, accents).

@@ -2,7 +2,7 @@
 //!
 //! This deliberately models the file's structure rather than the firmware's
 //! implementation. Timing and sound parameters are calibrated against reference
-//! recordings as phase 4 progresses.
+//! recordings.
 
 use crate::chorus::StereoChorus;
 use crate::delay::StereoDelay;
