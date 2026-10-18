@@ -4,28 +4,56 @@
   "version": "0.1.0",
   "description": "Music tracker for the CardputerZero",
   "store": {
-    "summary": "TODO: one line about your app (placeholders are auto-rejected)",
-    "description": "TODO: a longer description for the store detail page. Every TODO field in this store section must be replaced before publishing \u2014 the store validator rejects unedited template metadata.",
+    "summary": "Pocket music tracker that reads and writes M8 songs and instruments",
+    "description": "ZeroTracker is a music tracker for the CardputerZero, inspired by the M8 tracker and compatible with its song (.m8s) and instrument (.m8i) files.\n\n- Eight tracks of songs, chains, phrases, instruments and tables.\n- FM, WAV, MACRO (Braids models), HYPER and SAMPLER engines, with modulators, EQ and a sample editor that records from the microphone.\n- Mixer with chorus, delay, reverb, master limiter and oscilloscopes.\n- RENDER the song to WAV: the mix and a stem per track.\n- LIBRARY: download packs of songs, instruments and samples on the device.\n- Seven languages, themes, and a tooltip for every key (SYM + 4..8).\n\nAt the first start it creates ~/ZeroTracker with a demo song, instruments and a CC0 sample kit. APP > MANUAL shows a QR code to the getting-started guide. Not affiliated with Dirtywave.",
+    "locales": {
+      "en": {
+        "summary": "Pocket music tracker that reads and writes M8 songs and instruments"
+      },
+      "it": {
+        "summary": "Tracker musicale tascabile che legge e scrive canzoni e strumenti M8"
+      },
+      "fr": {
+        "summary": "Tracker musical de poche qui lit et écrit les morceaux et instruments M8"
+      },
+      "de": {
+        "summary": "Musiktracker im Taschenformat, der M8-Songs und -Instrumente liest und schreibt"
+      },
+      "es": {
+        "summary": "Tracker musical de bolsillo que lee y escribe canciones e instrumentos M8"
+      },
+      "ja": {
+        "summary": "M8 のソングと音色を読み書きできるポケット音楽トラッカー"
+      },
+      "zh-CN": {
+        "summary": "可读写 M8 歌曲与乐器文件的口袋音乐音序器"
+      }
+    },
     "categories": [
-      "TODO: pick 1-2 real categories from docs/APP_BUILDER_JSON.md"
+      "Creative & Office",
+      "Media"
     ],
     "screenshots": [
-      "screenshot/app-simulator-dark-darwin.png",
-      "screenshot/app-simulator-light-darwin.png"
+      "docs/screenshots/store/02-time.png",
+      "docs/screenshots/store/06-mix.png",
+      "docs/screenshots/store/04-instrument-fm.png",
+      "docs/screenshots/store/08-osc-columns.png",
+      "docs/screenshots/store/14-library.png",
+      "docs/screenshots/store/01-home.png"
     ],
-    "icon": "assets/images/template.png",
+    "icon": "assets/images/zerotracker.png",
     "license": "GPL-3.0-or-later",
-    "source_repo": "https://github.com/CardputerZero/Template",
+    "source_repo": "https://github.com/andreahaku/zerotracker",
     "author": {
-      "github": "TODO-your-github-login",
-      "display_name": "TODO: Your Name"
+      "github": "andreahaku",
+      "display_name": "Andrea Salvatore (IU4APC)"
     },
-    "share_code": "TODO",
+    "share_code": "ZTRK",
     "permissions": {
       "camera": false,
-      "microphone": false,
+      "microphone": true,
       "imu": false,
-      "network": false,
+      "network": true,
       "additional_hardware": false,
       "background_service": false,
       "external_display": false
