@@ -7,9 +7,8 @@ support its development:
 - a monthly sponsorship on [GitHub Sponsors](https://github.com/sponsors/andreahaku), also from
   the **Sponsor** button at the top of the repository.
 
-Donations are voluntary. They do not unlock any feature, and they do not buy support or a
-say in the roadmap. They help pay for test hardware and for the time spent on the engine, the
-sound and the documentation.
+Donations are voluntary. They do not unlock features, buy support or influence the roadmap.
+They help cover project costs, including test hardware.
 
 Other ways to help, without money: report bugs, send songs that sound wrong, translate, improve
 the documentation, or tell other musicians about ZeroTracker. See [CONTRIBUTING.md](CONTRIBUTING.md).
