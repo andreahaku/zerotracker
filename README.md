@@ -7,7 +7,7 @@ writes M8 song and instrument files, so a song can move between ZeroTracker and 
 
 *ZeroTracker 0.1.0 on the CardputerZero: click the picture for the video (2:32). The song is
 "SLSKERS DEMO" by [mikey303](https://www.youtube.com/c/mikey303), from jegasus'
-[M8 Tracker Workshop](https://github.com/jegasus/m8-tracker-workshop), CC BY-NC-SA 4.0; the
+[M8 Tracker Workshop](https://github.com/jegasus/m8-tracker-workshop), [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/); the
 video is shared under the same licence.*
 
 | | | |
