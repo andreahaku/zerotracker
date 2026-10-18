@@ -21,7 +21,7 @@ Getting started: [docs/manual](docs/manual/README.md). Learning resources for th
 ZeroTracker is inspired by the excellent [M8 tracker](https://dirtywave.com) by Dirtywave. We
 are M8 users and fans. That is why ZeroTracker opens and saves M8 song (`.m8s`) and instrument
 (`.m8i`) files, and why most of its workflow (song, chain, phrase, instrument, table) follows
-the M8. A song made on one should play on the other.
+the M8. Files move between the two without losing data; how they sound can differ (see below).
 
 ZeroTracker is an independent project. It is not affiliated with, endorsed by or supported by
 Dirtywave. M8 is Dirtywave's product and trademark. ZeroTracker uses the name only to describe
@@ -29,7 +29,7 @@ file compatibility.
 
 ## How it was built
 
-No M8 code was used. No M8 firmware was disassembled or decompiled.
+No Dirtywave code was used. No M8 firmware was disassembled or decompiled.
 ZeroTracker contains no Dirtywave code, data, samples, wavetables, fonts or graphics.
 
 Everything in ZeroTracker comes from analysis and comparison:

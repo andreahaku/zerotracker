@@ -9,8 +9,8 @@ ZeroTracker is an independent project, not affiliated with Dirtywave.
 
 ## Install and first start
 
-1. Install ZeroTracker from the CardputerZero app store, or copy the `.deb` from the releases
-   page and run `sudo apt install ./ZeroTracker_*.deb`.
+1. Download the `.deb` from the releases page, copy it to the CardputerZero and run
+   `sudo apt install ./ZeroTracker_*.deb`.
 2. Open it from the launcher.
 3. At the first start ZeroTracker creates `~/ZeroTracker` and copies the starter content into it:
    a song, 503 instruments and a small CC0 sample kit. Files already there stay as they are.
